@@ -1,0 +1,36 @@
+:root {
+  --bg: #f8fafc;      /* page background */
+  --card: #ffffff;    /* answer box, input */
+  --text: #0f172a;    /* text */
+  --accent: #2563eb;  /* button */
+  --ok: #16a34a;      /* completed chip */
+  --bad: #dc2626;     /* failed chip */
+  --border: #e2e8f0;
+}
+
+body { background: var(--bg); color: var(--text); margin: 0; }
+h1, h4 { color: var(--text); }
+.app { max-width: 760px; margin: 0 auto; padding: 24px; text-align: left; }
+
+textarea {
+  width: 100%; padding: 12px; font-size: 16px; box-sizing: border-box;
+  background: var(--card); color: var(--text);
+  border: 1px solid var(--border); border-radius: 8px;
+}
+button {
+  margin: 12px 0; padding: 10px 24px; font-size: 16px; cursor: pointer;
+  background: var(--accent); color: #fff; border: none; border-radius: 8px;
+}
+button:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.answer {
+  padding: 16px; background: var(--card);
+  border: 1px solid var(--border); border-radius: 8px;
+}
+.summary { margin: 16px 0; }
+.chips { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+.chip { padding: 4px 12px; border-radius: 16px; font-size: 14px; color: #fff; }
+.chip.completed { background: var(--ok); }
+.chip.failed { background: var(--bad); }
+.error { color: var(--bad); margin: 12px 0; }
+pre { overflow-x: auto; font-size: 13px; background: var(--card); padding: 12px; border-radius: 8px; border: 1px solid var(--border); }

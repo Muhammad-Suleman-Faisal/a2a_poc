@@ -1,0 +1,28 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    { "name": "Auth", "type": "debugpy", "request": "launch",
+      "program": "${workspaceFolder}/auth/main.py", "console": "integratedTerminal" },
+    { "name": "Meeting", "type": "debugpy", "request": "launch",
+      "program": "${workspaceFolder}/agents/meeting_planner/main.py", "console": "integratedTerminal" },
+    { "name": "Travel", "type": "debugpy", "request": "launch",
+      "program": "${workspaceFolder}/agents/other_agents.py", "args": ["travel"], "console": "integratedTerminal",
+      "envFile": "${workspaceFolder}/.env" },
+    { "name": "Birthday", "type": "debugpy", "request": "launch",
+      "program": "${workspaceFolder}/agents/other_agents.py", "args": ["birthday"], "console": "integratedTerminal",
+      "envFile": "${workspaceFolder}/.env" },
+    { "name": "Content", "type": "debugpy", "request": "launch",
+      "program": "${workspaceFolder}/agents/other_agents.py", "args": ["content"], "console": "integratedTerminal",
+      "envFile": "${workspaceFolder}/.env" },
+    { "name": "Client Agent", "type": "debugpy", "request": "launch",
+      "program": "${workspaceFolder}/client/client_agent.py", "console": "integratedTerminal",
+      "envFile": "${workspaceFolder}/.env" },
+    { "name": "Dashboard", "type": "node-terminal", "request": "launch",
+      "command": "npm run dev", "cwd": "${workspaceFolder}/dashboard" }
+  ],
+  "compounds": [
+    { "name": "ALL SERVICES",
+      "configurations": ["Auth", "Meeting", "Travel", "Birthday", "Content", "Client Agent", "Dashboard"],
+      "stopAll": true }
+  ]
+}
