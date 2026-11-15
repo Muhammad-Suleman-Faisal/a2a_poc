@@ -1,5 +1,8 @@
 # Secrets
 .env
+auth/iam.db
+auth/iam.db-*
+auth/keys/
 
 # Python
 .venv/
@@ -16,4 +19,6 @@ dist/
 # Editor
 .vscode/*
 !.vscode/launch.json
-!.vscode/settings.json
+!.vscode/settings.jsonaudit/*.jsonl
+auth/iam.db*
+audit/*.jsonl
