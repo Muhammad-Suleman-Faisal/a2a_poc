@@ -1,7 +1,4 @@
-import os
-from google import genai
-from google.genai import types
-
+import asyncio
 import sys
 from pathlib import Path
 
@@ -13,12 +10,17 @@ from a2a.server.request_handlers import DefaultRequestHandler
 from a2a.server.tasks import InMemoryTaskStore
 from a2a.types import AgentCapabilities, AgentCard, AgentSkill
 from a2a.utils import new_agent_text_message
+from dotenv import load_dotenv
+from google import genai
+from google.genai import types
+
+load_dotenv()  # root ki .env se GEMINI_API_KEY load karta hai (genai.Client() se pehle zaruri)
 
 # jwt_guard meeting_planner folder mein hai; wahi se import
 sys.path.insert(0, str(Path(__file__).parent / "meeting_planner"))
 from jwt_guard import JWTGuard  # noqa: E402
 
-# Har agent ki config: port, scope, skill, aur mock jawab
+# Har agent ki config: port, scope, skill, LLM role, aur fallback jawab
 AGENTS = {
     "travel": {
         "port": 9002,
@@ -27,7 +29,7 @@ AGENTS = {
         "skill": ("plan_trip", "Travel Planner",
                   "Creates short getaway itineraries for a destination.",
                   ["travel", "trip", "itinerary", "getaway"]),
-        "role": "You are a travel planner. Create an itinerary for exactly the destination and number of days requested (default 2 days if unspecified). Be concise, bullet points.",          
+        "role": "You are a travel planner. Create an itinerary for exactly the destination and number of days requested (default 2 days if unspecified). Be concise, bullet points.",
         "reply": "Getaway itinerary:\n- Day 1: arrival, local sights, evening walk\n- Day 2: viewpoints, local food, return",
     },
     "birthday": {
@@ -37,7 +39,7 @@ AGENTS = {
         "skill": ("plan_birthday", "Birthday Planner",
                   "Suggests birthday celebration themes and activities.",
                   ["birthday", "party", "celebration", "child"]),
-        "role": "You are a birthday planner. Suggest themes and activities for the occasion described. Be concise, bullet points.",          
+        "role": "You are a birthday planner. Suggest themes and activities for the occasion described. Be concise, bullet points.",
         "reply": "Birthday ideas:\n- Theme: favourite cartoon or superheroes\n- Activities: games, cake cutting, return gifts",
     },
     "content": {
@@ -52,6 +54,9 @@ AGENTS = {
     },
 }
 
+# Lite models pehle (tez); fail ya timeout par agla model
+MODELS = ("gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-3.7-flash")
+
 
 class LLMExecutor(AgentExecutor):
     """Har agent apna jawab Gemini se banata hai (agent ki role instruction ke saath)."""
@@ -64,18 +69,21 @@ class LLMExecutor(AgentExecutor):
     async def execute(self, context: RequestContext, event_queue: EventQueue) -> None:
         user_text = context.get_user_input()  # client ka subtask
         reply = self.fallback
-        # Lite models pehle (tez); fail hone par agla model
-        for model in ("gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-3.7-flash"):
+        for model in MODELS:
             try:
-                resp = await self.llm.aio.models.generate_content(
-                    model=model,
-                    contents=user_text,
-                    config=types.GenerateContentConfig(system_instruction=self.role),
+                # wait_for: atka hua call 15s baad cancel, taake agent hang na ho
+                resp = await asyncio.wait_for(
+                    self.llm.aio.models.generate_content(
+                        model=model,
+                        contents=user_text,
+                        config=types.GenerateContentConfig(system_instruction=self.role),
+                    ),
+                    timeout=15,
                 )
                 reply = resp.text.strip()
                 break
             except Exception:
-                continue
+                continue  # agla model try karo; sab fail hon to fallback jawab
         await event_queue.enqueue_event(new_agent_text_message(reply))
 
     async def cancel(self, context: RequestContext, event_queue: EventQueue) -> None:
@@ -109,7 +117,7 @@ def main() -> None:
     )
     app = A2AStarletteApplication(agent_card=build_card(cfg), http_handler=handler).build()
     # Is agent par sirf apne scope wala token chalega
-    app.add_middleware(JWTGuard, required_scope=cfg["scope"])
+    app.add_middleware(JWTGuard, required_scope=cfg["scope"], audience=f"{key}-planner")
     uvicorn.run(app, host="0.0.0.0", port=cfg["port"])
 
 

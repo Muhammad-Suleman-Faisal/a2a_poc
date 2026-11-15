@@ -1,6 +1,10 @@
 import re
 
 import uvicorn
+from dotenv import load_dotenv
+
+load_dotenv()
+
 from jwt_guard import JWTGuard
 from a2a.server.apps import A2AStarletteApplication
 from a2a.server.request_handlers import DefaultRequestHandler
@@ -67,7 +71,7 @@ def main() -> None:
     app = A2AStarletteApplication(agent_card=build_agent_card(), http_handler=handler)
     starlette_app = app.build()
     # Middleware: is agent par sirf "agent:meeting" scope wala token chalega
-    starlette_app.add_middleware(JWTGuard, required_scope="agent:meeting")
+    starlette_app.add_middleware(JWTGuard, required_scope="agent:meeting", audience="meeting-planner")
     uvicorn.run(starlette_app, host="0.0.0.0", port=9001)
 
 
