@@ -19,10 +19,5 @@
       "envFile": "${workspaceFolder}/.env" },
     { "name": "Dashboard", "type": "node-terminal", "request": "launch",
       "command": "npm run dev", "cwd": "${workspaceFolder}/dashboard" }
-  ],
-  "compounds": [
-    { "name": "ALL SERVICES",
-      "configurations": ["Auth", "Meeting", "Travel", "Birthday", "Content", "Client Agent", "Dashboard"],
-      "stopAll": true }
   ]
 }
