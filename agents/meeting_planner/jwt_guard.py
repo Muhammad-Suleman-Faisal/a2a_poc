@@ -3,6 +3,7 @@ import jwt
 from jwt import PyJWKClient
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
+from a2a.server.context import ServerCallContext
 
 SECRET = "poc-secret-change-me"  # auth server wala hi secret
 ISSUER = "a2a-poc-auth"
@@ -41,6 +42,7 @@ class JWTGuard(BaseHTTPMiddleware):
                 required = f"{prefix}.invoke"
                 if required not in claims.get("scope", "").split():
                     return JSONResponse({"error": "insufficient_scope"}, status_code=403)
+                request.scope.setdefault("state", {})["iam_scopes"] = claims.get("scope", "").split()
                 return await call_next(request)
             # Signature, expiry aur issuer teeno check hote hain
             claims = jwt.decode(
@@ -56,3 +58,11 @@ class JWTGuard(BaseHTTPMiddleware):
             return JSONResponse({"error": "insufficient_scope"}, status_code=403)
 
         return await call_next(request)
+
+
+class JWTCallContextBuilder:
+    """Copy verified IAM scopes from the request state into the A2A executor context."""
+
+    def build(self, request):
+        """Build an A2A context containing only the scopes already verified by JWTGuard."""
+        return ServerCallContext(state={"iam_scopes": request.scope.get("state", {}).get("iam_scopes", [])})

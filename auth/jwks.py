@@ -10,7 +10,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from jwt import InvalidTokenError
 import jwt
 
-KEYS_DIR = Path(__file__).resolve().parent / "keys"
+KEYS_DIR = Path(os.getenv("IAM_KEYS_DIR", Path(__file__).resolve().parent / "keys"))
 PRIVATE_KEY_PATH = KEYS_DIR / "iam_private_key.pem"
 PUBLIC_KEY_PATH = KEYS_DIR / "iam_public_key.pem"
 ISSUER = "a2a-poc-iam"

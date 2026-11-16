@@ -172,6 +172,19 @@ def skills_catalog(allowed: set[str] | None = None) -> str:
     return "\n".join(lines)
 
 
+def keyword_agent_picks(prompt: str, allowed: set[str] | None = None) -> list[dict]:
+    """Fill router omissions when the request contains an advertised skill tag."""
+    lowered = prompt.lower()
+    picks = []
+    for key, card in CARDS.items():
+        if allowed is not None and key not in allowed:
+            continue
+        matched = any(tag.lower() in lowered for skill in card.skills for tag in skill.tags)
+        if matched:
+            picks.append({"agent": key, "subtask": prompt.strip()})
+    return picks
+
+
 async def select_agents(prompt: str, allowed: set[str] | None = None,
                         cid: str | None = None) -> list[dict]:
     """LLM se relevant agents aur har ek ka subtask chunwata hai (JSON list)."""
@@ -185,6 +198,8 @@ async def select_agents(prompt: str, allowed: set[str] | None = None,
     raw = raw.replace("```json", "").replace("```", "").strip()  # markdown fences hatao
     picks = json.loads(raw)
     picks = [p for p in picks if p["agent"] in CARDS]  # unknown keys filter
+    existing = {p["agent"] for p in picks}
+    picks.extend(p for p in keyword_agent_picks(prompt, allowed) if p["agent"] not in existing)
     if allowed is not None:
         # Allowlist guard: LLM ne permitted set se bahar ka agent chuna to drop (prompt-injection safety)
         for p in picks:
