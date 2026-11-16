@@ -1,8 +1,21 @@
 import { useState, useRef, useEffect } from "react";
 import ReactMarkdown from "react-markdown";
+import { createIamClient } from "./iamClient.js";
 import "./App.css";
 
 const BASE = "http://localhost:8100"; // client agent ka base URL
+const AUTH = "http://localhost:9000";
+const IAM_ENABLED = import.meta.env.VITE_IAM_ENABLED === "true";
+
+// Decode the role claim locally for display and role-gated controls only.
+function decodeRole(token) {
+  try {
+    const payload = token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+    return JSON.parse(atob(payload)).role || "user";
+  } catch {
+    return "user";
+  }
+}
 
 // Empty state ke suggestion cards (click par sirf prompt box bharta hai)
 const SUGGESTIONS = [
@@ -37,6 +50,14 @@ const Icon = {
 };
 
 export default function App() {
+  // Keep credentials and tokens only in component memory; reloads require login.
+  const [session, setSession] = useState(null);
+  const [loginName, setLoginName] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
+  const [loginError, setLoginError] = useState("");
+  const [auditOpen, setAuditOpen] = useState(false);
+  const [auditRows, setAuditRows] = useState([]);
+  const [auditFilters, setAuditFilters] = useState({ user: "", agent: "", decision: "", limit: "100" });
   const [prompt, setPrompt] = useState("");
   const [turns, setTurns] = useState([]); // har turn: { prompt, data, error }
   const [pending, setPending] = useState(""); // jo prompt abhi process ho raha hai
@@ -45,11 +66,78 @@ export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth > 900);
   const endRef = useRef(null);
   const inputRef = useRef(null);
+  const sessionRef = useRef(session);
+  sessionRef.current = session;
+
+  // Refresh the in-memory session one minute before the access token expires.
+  async function refreshSession(current = session) {
+    if (!current?.refresh_token) return false;
+    try {
+      const res = await fetch(`${AUTH}/auth/refresh`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refresh_token: current.refresh_token }),
+      });
+      if (!res.ok) throw new Error("refresh failed");
+      const tokens = await res.json();
+      const updated = { ...tokens, username: current.username, role: decodeRole(tokens.access_token), expiresAt: Date.now() + tokens.expires_in * 1000 };
+      setSession(updated);
+      return updated;
+    } catch {
+      setSession(null);
+      return false;
+    }
+  }
+
+  // Schedule rotating refresh before access token expiry.
+  useEffect(() => {
+    if (!IAM_ENABLED || !session) return undefined;
+    const timer = setTimeout(() => refreshSession(), Math.max(1000, session.expiresAt - Date.now() - 60_000));
+    return () => clearTimeout(timer);
+  }, [session]);
+
+  // Authenticate a user and initialize a memory-only token session.
+  async function login(e) {
+    e.preventDefault();
+    setLoginError("");
+    try {
+      const res = await fetch(`${AUTH}/auth/login`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username: loginName, password: loginPassword }) });
+      if (!res.ok) throw new Error(res.status === 429 ? "too many attempts" : "invalid credentials");
+      const tokens = await res.json();
+      setSession({ ...tokens, username: tokens.username || loginName, role: decodeRole(tokens.access_token), expiresAt: Date.now() + tokens.expires_in * 1000 });
+      setLoginPassword("");
+    } catch (error) {
+      setLoginError(error.message || "invalid credentials");
+    }
+  }
+
+  // Share one configured helper across roster, chat, and audit requests.
+  const clientFetch = createIamClient({ enabled: IAM_ENABLED, baseUrl: BASE,
+    getSession: () => sessionRef.current,
+    refresh: () => refreshSession(sessionRef.current),
+    onExpired: () => setSession(null),
+  });
+
+
+  // Send logout to IAM and clear all in-memory session state.
+  async function logout() {
+    if (session) {
+      await fetch(`${AUTH}/auth/logout`, { method: "POST", headers: { Authorization: `Bearer ${session.access_token}`, "Content-Type": "application/json" }, body: JSON.stringify({ refresh_token: session.refresh_token }) }).catch(() => {});
+    }
+    setSession(null);
+    setTurns([]);
+  }
+
+  // Load administrator audit events using the active user and filter values.
+  async function loadAudit() {
+    const query = new URLSearchParams(Object.entries(auditFilters).filter(([, value]) => value));
+    const response = await clientFetch(`/audit?${query}`);
+    if (response.ok) setAuditRows((await response.json()).events || []);
+  }
 
   // Agents ki list aur online/offline status backend se laata hai
   async function loadRoster() {
     try {
-      const res = await fetch(`${BASE}/agents`);
+      const res = await clientFetch("/agents");
       if (!res.ok) throw new Error();
       setRoster(await res.json());
       setRosterError(false);
@@ -60,8 +148,8 @@ export default function App() {
 
   // Page khulte hi agents ki list load hoti hai
   useEffect(() => {
-    loadRoster();
-  }, []);
+    if (!IAM_ENABLED || session) loadRoster();
+  }, [session]);
 
   // Naya message ya loading aane par chat ke neeche scroll karta hai
   useEffect(() => {
@@ -84,7 +172,7 @@ export default function App() {
     setPending(text);
     const turn = { prompt: text, data: null, error: "" };
     try {
-      const res = await fetch(`${BASE}/chat`, {
+      const res = await clientFetch("/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ prompt: text }),
@@ -111,7 +199,7 @@ export default function App() {
   }
 
   // Suggestion card: prompt box bharta hai aur focus deta hai
-  function useSuggestion(text) {
+  function fillSuggestion(text) {
     setPrompt(text);
     inputRef.current?.focus();
   }
@@ -133,6 +221,20 @@ export default function App() {
   const usedKeys = new Set((latest?.agents ?? []).map((a) => a.agent));
   const online = roster.filter((a) => a.online).length;
   const isEmpty = turns.length === 0 && !pending;
+
+  // Render the login form until the volatile IAM session exists.
+  if (IAM_ENABLED && !session) return (
+    <main className="iam-login-wrap">
+      <form className="iam-login" onSubmit={login}>
+        <div className="logo">A2</div>
+        <h1>A2A Assistant</h1>
+        <label>Username<input autoComplete="username" value={loginName} onChange={(e) => setLoginName(e.target.value)} required /></label>
+        <label>Password<input type="password" autoComplete="current-password" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} required /></label>
+        {loginError && <div className="error-box" role="alert">{loginError}</div>}
+        <button className="new-btn" type="submit">Log in</button>
+      </form>
+    </main>
+  );
 
   return (
     <div className="app">
@@ -185,12 +287,23 @@ export default function App() {
             {Icon.menu}
           </button>
           <div className="brand">A2A Assistant</div>
+          {IAM_ENABLED && <><span className="iam-user">{session.username} <span className="badge">{session.role}</span></span>{session.role === "admin" && <button className="new-btn" onClick={() => { setAuditOpen((open) => !open); if (!auditOpen) loadAudit(); }}>Audit</button>}<button className="new-btn" onClick={logout}>Log out</button></>}
           <button className="new-btn" onClick={newChat} disabled={!!pending}>
             {Icon.plus} <span>New chat</span>
           </button>
         </header>
 
         <div className="scroll">
+          {IAM_ENABLED && auditOpen && session.role === "admin" && <section className="audit-panel">
+            <h2>Audit events</h2>
+            <div className="audit-filters">
+              {[["user", "User"], ["agent", "Agent"]].map(([key, label]) => <input key={key} aria-label={label} placeholder={label} value={auditFilters[key]} onChange={(e) => setAuditFilters((f) => ({ ...f, [key]: e.target.value }))} />)}
+              <select aria-label="Decision" value={auditFilters.decision} onChange={(e) => setAuditFilters((f) => ({ ...f, decision: e.target.value }))}><option value="">All decisions</option><option>allow</option><option>deny</option><option>fail</option></select>
+              <input aria-label="Limit" type="number" min="1" max="500" value={auditFilters.limit} onChange={(e) => setAuditFilters((f) => ({ ...f, limit: e.target.value }))} />
+              <button className="new-btn" onClick={loadAudit}>Apply</button>
+            </div>
+            <div className="audit-table-wrap"><table><thead><tr>{["ts", "cid", "actor", "role", "event", "agent", "decision", "reason"].map((h) => <th key={h}>{h}</th>)}</tr></thead><tbody>{auditRows.map((row, index) => <tr key={`${row.ts}-${index}`}>{["ts", "cid", "actor", "role", "event", "agent", "decision", "reason"].map((key) => <td key={key}>{row[key] || ""}</td>)}</tr>)}</tbody></table></div>
+          </section>}
           <div className="thread">
             {isEmpty && (
               <div className="hero">
@@ -202,7 +315,7 @@ export default function App() {
                 </p>
                 <div className="suggest">
                   {SUGGESTIONS.map((s) => (
-                    <button key={s} className="suggest-card" onClick={() => useSuggestion(s)}>
+                    <button key={s} className="suggest-card" onClick={() => fillSuggestion(s)}>
                       {s}
                     </button>
                   ))}
@@ -224,7 +337,7 @@ export default function App() {
                     {t.data && (
                       <>
                         <div className="md">
-                          <ReactMarkdown>{t.data.answer}</ReactMarkdown>
+                          <ReactMarkdown>{IAM_ENABLED && t.data.agents?.some((a) => a.status === "failed" && (/access denied|403/i.test(a.text || ""))) ? t.data.answer.replace(/access denied[^.\n]*|403[^.\n]*/gi, "Not allowed for your role") : t.data.answer}</ReactMarkdown>
                         </div>
 
                         {/* Footer: summary + agent chips + details */}
@@ -247,6 +360,7 @@ export default function App() {
                           <pre>{JSON.stringify(t.data.debug?.selection, null, 2)}</pre>
                           <h4>Agent outputs</h4>
                           <pre>{JSON.stringify(t.data.agents, null, 2)}</pre>
+                          {t.data.correlation_id && <><h4>Correlation ID</h4><pre>{t.data.correlation_id}</pre></>}
                         </details>
                       </>
                     )}

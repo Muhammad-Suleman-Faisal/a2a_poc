@@ -114,6 +114,22 @@ button { font: inherit; cursor: pointer; }
 /* Overlay (sirf mobile par dikhta hai) */
 .overlay { display: none; }
 
+/* IAM login and administrator audit surfaces use the existing palette. */
+.iam-login-wrap { min-height: 100dvh; display: grid; place-items: center; padding: 24px; }
+.iam-login { width: min(100%, 380px); display: flex; flex-direction: column; gap: 14px; padding: 28px; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); }
+.iam-login .logo { margin: 0 auto; }
+.iam-login h1 { text-align: center; margin: 0 0 8px; font-size: 1.4rem; }
+.iam-login label { display: grid; gap: 6px; font-size: 14px; font-weight: 600; }
+.iam-login input, .audit-filters input, .audit-filters select { min-width: 0; padding: 9px 11px; border: 1px solid var(--border); border-radius: 9px; background: var(--bg); color: var(--ink); font: inherit; }
+.iam-login .new-btn { justify-content: center; background: var(--accent); color: #fff; }
+.iam-user { display: flex; align-items: center; gap: 7px; font-size: 13px; }
+.audit-panel { margin: 14px auto; max-width: 1100px; padding: 16px; border: 1px solid var(--border); border-radius: 12px; background: var(--card); }
+.audit-panel h2 { margin: 0 0 12px; font-size: 18px; }
+.audit-filters { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.audit-table-wrap { max-height: 360px; overflow: auto; }
+.audit-table-wrap table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.audit-table-wrap th, .audit-table-wrap td { text-align: left; vertical-align: top; padding: 7px; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
+
 /* Responsive */
 @media (max-width: 900px) {
   .sidebar { position: fixed; z-index: 20; inset: 0 auto 0 0; width: 300px; transform: translateX(-100%); transition: transform .2s ease; border-right-width: 1px; }
